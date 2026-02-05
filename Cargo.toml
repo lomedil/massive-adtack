@@ -7,3 +7,6 @@ edition = "2024"
 ldap3 = "0.11"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
