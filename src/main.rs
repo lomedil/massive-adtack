@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod naming;
 mod oids;
 
 use anyhow::Result;
@@ -23,6 +24,25 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Manage users
+    Users {
+        #[command(subcommand)]
+        command: UserCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum UserCommands {
+    /// Add random users
+    Add {
+        /// Number of users to create
+        #[arg(short, long, default_value_t = 1)]
+        count: u32,
+
+        /// Format for the username (overrides config)
+        #[arg(short, long)]
+        format: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -35,6 +55,9 @@ async fn main() -> Result<()> {
         }
         Commands::Check { json } => {
             commands::check::execute(json).await?;
+        }
+        Commands::Users { command } => {
+            commands::users::execute(command).await?;
         }
     }
 

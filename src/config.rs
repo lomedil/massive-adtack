@@ -5,6 +5,27 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct FieldMappings {
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone: String,
+    pub email: String,
+}
+
+impl Default for FieldMappings {
+    fn default() -> Self {
+        Self {
+            username: "sAMAccountName".to_string(),
+            first_name: "givenName".to_string(),
+            last_name: "sn".to_string(),
+            phone: "telephoneNumber".to_string(),
+            email: "mail".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub url: String,
     pub base_dn: String,
@@ -12,6 +33,9 @@ pub struct Config {
     pub password: String,
     pub starttls: bool,
     pub tls_ca_cert: Option<String>,
+    pub username_format: Option<String>,
+    #[serde(default)]
+    pub mappings: FieldMappings,
 }
 
 impl Config {

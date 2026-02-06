@@ -36,10 +36,8 @@ pub async fn execute(json: bool) -> Result<()> {
                 println!("Note: tls_ca_cert is 'never'. Disabling certificate verification...");
             }
             settings = settings.set_no_tls_verify(true);
-        } else {
-            if !json {
-                println!("Note: Using CA cert from: {}", ca_cert);
-            }
+        } else if !json {
+            println!("Note: Using CA cert from: {}", ca_cert);
         }
     }
 
