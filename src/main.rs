@@ -1,6 +1,7 @@
+mod commands;
 mod config;
+mod oids;
 
-use crate::config::Config;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -16,6 +17,12 @@ struct Cli {
 enum Commands {
     /// Show current configuration
     Config,
+    /// Check connectivity and server information
+    Check {
+        /// Output results in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[tokio::main]
@@ -24,9 +31,10 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Config => {
-            let cfg = Config::load()?;
-            println!("Configuration found:");
-            println!("{:#?}", cfg);
+            commands::config::execute()?;
+        }
+        Commands::Check { json } => {
+            commands::check::execute(json).await?;
         }
     }
 

@@ -1,16 +1,17 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub url: String,
     pub base_dn: String,
     pub user: String,
     pub password: String,
     pub starttls: bool,
+    pub tls_ca_cert: Option<String>,
 }
 
 impl Config {
