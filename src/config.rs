@@ -1,3 +1,4 @@
+use crate::dn::DistinguishedName;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -28,8 +29,8 @@ impl Default for FieldMappings {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub url: String,
-    pub base_dn: String,
-    pub user: String,
+    pub base_dn: DistinguishedName,
+    pub user: DistinguishedName,
     pub password: String,
     pub starttls: bool,
     pub tls_ca_cert: Option<String>,

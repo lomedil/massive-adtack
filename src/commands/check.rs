@@ -88,7 +88,7 @@ pub async fn execute(json: bool) -> Result<()> {
 
     let mut check_out = CheckResult {
         url: cfg.url.clone(),
-        bound_as: cfg.user.clone(),
+        bound_as: cfg.user.to_string(),
         vendor: None,
         dns_host_name: None,
         is_samba: false,

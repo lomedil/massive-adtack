@@ -1,10 +1,13 @@
 mod commands;
 mod config;
+mod dn;
 mod naming;
 mod oids;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+
+use crate::dn::DistinguishedName;
 
 #[derive(Parser)]
 #[command(name = "mad")]
@@ -45,7 +48,7 @@ pub enum UserCommands {
 
         /// Container DN for new users (e.g., "ou=users,dc=example,dc=com")
         #[arg(short = 'C', long)]
-        container: Option<String>,
+        container: Option<DistinguishedName>,
     },
 }
 
