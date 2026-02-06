@@ -6,8 +6,10 @@ use anyhow::{Context, Result};
 use fake::Fake;
 use fake::faker::name::raw::*;
 use fake::locales::EN;
+use indicatif::{ProgressBar, ProgressStyle};
 use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
 use std::collections::{BTreeMap, HashSet};
+use std::time::Instant;
 
 pub async fn execute(command: UserCommands) -> Result<()> {
     match command {
@@ -43,21 +45,48 @@ async fn add_users(
     println!("Validating target base: {}", target_base);
     validate_base_exists(&mut ldap, &target_base).await?;
 
-    println!("Generating {} users for domain: {}", count, domain);
+    println!("Generating {} users for domain: {}\n", count, domain);
+
+    let pb = ProgressBar::new(count as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")?
+            .progress_chars("#>-"),
+    );
+
+    let mut success = 0;
+    let mut failure = 0;
+    let start_time = Instant::now();
 
     for i in 1..=count {
         let (dn, attrs) = prepare_user_entry(&cfg, &formatter, &domain, &target_base, i);
-
-        println!("[{}/{}] Adding user: {} ", i, count, dn);
+        pb.set_message(format!("Adding {}", dn));
 
         let res = ldap.add(&dn.to_string(), attrs).await?;
-        if let Err(e) = res.success() {
-            eprintln!("  Warning: Failed to add user at index {}: {}", i, e);
+        match res.success() {
+            Ok(_) => success += 1,
+            Err(e) => {
+                failure += 1;
+                pb.suspend(|| {
+                    eprintln!("  Warning: Failed to add user {}: {}", dn, e);
+                });
+            }
         }
+        pb.inc(1);
     }
 
+    pb.finish_with_message("Done!");
+
+    let total_duration = start_time.elapsed();
+    let rate = success as f64 / total_duration.as_secs_f64();
+
+    println!("\n--- Execution Summary ---");
+    println!("Total Time:       {:?}", total_duration);
+    println!("Successful:       {}", success);
+    println!("Failed:           {}", failure);
+    println!("Creation Rate:    {:.2} users/sec", rate);
+
     ldap.unbind().await.context("Failed to unbind")?;
-    println!("\nUser creation completed.");
     Ok(())
 }
 
