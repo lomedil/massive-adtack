@@ -42,6 +42,10 @@ pub enum UserCommands {
         /// Format for the username (overrides config)
         #[arg(short, long)]
         format: Option<String>,
+
+        /// Container DN for new users (e.g., "ou=users,dc=example,dc=com")
+        #[arg(short = 'C', long)]
+        container: Option<String>,
     },
 }
 

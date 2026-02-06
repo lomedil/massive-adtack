@@ -10,21 +10,39 @@ use std::collections::{BTreeMap, HashSet};
 
 pub async fn execute(command: UserCommands) -> Result<()> {
     match command {
-        UserCommands::Add { count, format } => add_users(count, format).await,
+        UserCommands::Add {
+            count,
+            format,
+            container,
+        } => add_users(count, format, container).await,
     }
 }
 
-async fn add_users(count: u32, template_override: Option<String>) -> Result<()> {
+async fn add_users(
+    count: u32,
+    template_override: Option<String>,
+    container: Option<String>,
+) -> Result<()> {
     let cfg = Config::load()?;
     let domain = derive_domain(&cfg.base_dn);
     let formatter = NamingFormatter::new(template_override.or(cfg.username_format.clone()));
 
     let mut ldap = connect_ldap(&cfg).await?;
 
+    // Determine the full base DN for users
+    let target_base = if let Some(c) = &container {
+        format!("{},{}", c, cfg.base_dn)
+    } else {
+        cfg.base_dn.clone()
+    };
+
+    println!("Validating target base: {}", target_base);
+    validate_base_exists(&mut ldap, &target_base).await?;
+
     println!("Generating {} users for domain: {}", count, domain);
 
     for i in 1..=count {
-        let (dn, attrs) = prepare_user_entry(&cfg, &formatter, &domain, i);
+        let (dn, attrs) = prepare_user_entry(&cfg, &formatter, &domain, &target_base, i);
 
         println!("[{}/{}] Adding user: {} ", i, count, dn);
 
@@ -62,10 +80,35 @@ async fn connect_ldap(cfg: &Config) -> Result<Ldap> {
     Ok(ldap)
 }
 
+async fn validate_base_exists(ldap: &mut Ldap, base_dn: &str) -> Result<()> {
+    use ldap3::Scope;
+
+    let res = ldap
+        .search(base_dn, Scope::Base, "(objectClass=*)", vec!["1.1"])
+        .await
+        .context(format!("Failed to search for base DN: {}", base_dn))?;
+
+    let (_entries, result) = res.success().context(format!(
+        "LDAP error while validating container '{}'",
+        base_dn
+    ))?;
+
+    if result.rc != 0 {
+        return Err(anyhow::anyhow!(
+            "Target container '{}' does not exist or is not accessible (RC={})",
+            base_dn,
+            result.rc
+        ));
+    }
+
+    Ok(())
+}
+
 fn prepare_user_entry(
     cfg: &Config,
     formatter: &NamingFormatter,
     domain: &str,
+    target_base: &str,
     index: u32,
 ) -> (String, Vec<(String, HashSet<String>)>) {
     let first_name: String = FirstName(EN).fake();
@@ -75,8 +118,8 @@ fn prepare_user_entry(
     let email = format!("{}@{}", username, domain);
     let phone: String = format!("+34 6{:08}", (index % 100000000));
 
-    // Use CN as RDN for AD compatibility
-    let dn = format!("cn={},{}", username, cfg.base_dn);
+    // Use CN as RDN for AD compatibility, within the target base
+    let dn = format!("cn={},{}", username, target_base);
 
     let mut attrs = BTreeMap::new();
     attrs.insert(
