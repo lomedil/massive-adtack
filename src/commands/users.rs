@@ -7,7 +7,7 @@ use fake::Fake;
 use fake::faker::name::raw::*;
 use fake::locales::EN;
 use indicatif::{ProgressBar, ProgressStyle};
-use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
+use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, SearchEntry};
 use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
 
@@ -18,6 +18,11 @@ pub async fn execute(command: UserCommands) -> Result<()> {
             format,
             container,
         } => add_users(count, format, container).await,
+        UserCommands::List {
+            filter,
+            container,
+            ldap_filter,
+        } => list_users(filter, container, ldap_filter).await,
     }
 }
 
@@ -91,6 +96,95 @@ async fn add_users(
 
     ldap.unbind().await.context("Failed to unbind")?;
     Ok(())
+}
+
+async fn list_users(
+    filter: Option<String>,
+    container: Option<DistinguishedName>,
+    ldap_filter: Option<String>,
+) -> Result<()> {
+    let cfg = Config::load()?;
+    let mut ldap = connect_ldap(&cfg).await?;
+
+    let target_base = if let Some(c) = &container {
+        DistinguishedName::builder()
+            .add_raw(c.as_str())
+            .append_base(&cfg.base_dn)
+            .build()?
+    } else {
+        cfg.base_dn.clone()
+    };
+
+    let final_filter = if let Some(raw) = ldap_filter {
+        raw
+    } else if let Some(f) = filter {
+        let pattern = if f.contains('*') {
+            f
+        } else {
+            format!("*{}*", f)
+        };
+        // Smart filter: search in common attributes
+        format!(
+            "(&(objectClass=user)(|(cn={0})(sAMAccountName={0})(mail={0})))",
+            pattern
+        )
+    } else {
+        "(objectClass=user)".to_string()
+    };
+
+    println!("Searching in base: {}", target_base);
+    println!("Filter: {}\n", final_filter);
+
+    let (res, _) = ldap
+        .search(
+            target_base.as_str(),
+            ldap3::Scope::Subtree,
+            &final_filter,
+            vec![
+                &cfg.mappings.username,
+                &cfg.mappings.first_name,
+                &cfg.mappings.last_name,
+                &cfg.mappings.email,
+            ],
+        )
+        .await?
+        .success()?;
+
+    if res.is_empty() {
+        println!("No users found.");
+        return Ok(());
+    }
+
+    // Header
+    println!(
+        "{:<20} {:<30} {:<30} {:<30}",
+        "Username", "First Name", "Last Name", "Email"
+    );
+    println!("{}", "-".repeat(110));
+
+    for entry in res {
+        let search_entry = SearchEntry::construct(entry);
+        let username = get_attr(&search_entry, &cfg.mappings.username);
+        let first_name = get_attr(&search_entry, &cfg.mappings.first_name);
+        let last_name = get_attr(&search_entry, &cfg.mappings.last_name);
+        let email = get_attr(&search_entry, &cfg.mappings.email);
+
+        println!(
+            "{:<20} {:<30} {:<30} {:<30}",
+            username, first_name, last_name, email
+        );
+    }
+
+    Ok(())
+}
+
+fn get_attr(entry: &ldap3::SearchEntry, attr: &str) -> String {
+    entry
+        .attrs
+        .get(attr)
+        .and_then(|v| v.first())
+        .cloned()
+        .unwrap_or_default()
 }
 
 async fn connect_ldap(cfg: &Config) -> Result<Ldap> {

@@ -36,19 +36,34 @@ enum Commands {
 
 #[derive(Subcommand)]
 pub enum UserCommands {
-    /// Add random users
+    /// Add multiple users to the directory
     Add {
         /// Number of users to create
-        #[arg(short, long, default_value_t = 1)]
+        #[arg(short = 'n', long, default_value_t = 10)]
         count: u32,
 
-        /// Format for the username (overrides config)
+        /// Username format template (e.g. "{first}.{last}{n}")
         #[arg(short, long)]
         format: Option<String>,
 
-        /// Container DN for new users (e.g., "ou=users,dc=example,dc=com")
+        /// Optional container DN where users will be created (relative to base DN)
         #[arg(short = 'C', long)]
         container: Option<DistinguishedName>,
+    },
+
+    /// List users from the directory
+    List {
+        /// Simple search filter (searches in multiple fields)
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Optional container DN to scope the search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Raw LDAP filter (e.g. "(objectCategory=person)")
+        #[arg(short, long)]
+        ldap_filter: Option<String>,
     },
 }
 
