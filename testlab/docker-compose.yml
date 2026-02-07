@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  samba-ad:
+    image: nowsci/samba-domain:latest
+    container_name: samba-dc-lab
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - DOMAIN=LAB.LOCAL
+      - DOMAINPASS=SuperPassword123!
+      - DNSFORWARDER=1.1.1.1
+      - HOSTIP=127.0.0.1 # <--- CHANGE TO YOUR MACHINE'S IP IF CONNECTING REMOTELY
+      - TZ=Europe/Madrid
+      - NOCOMPLEXITY=false
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data/samba:/var/lib/samba
+      - ./config/samba:/etc/samba/external
+      - ./data/users:/users
+    healthcheck:
+      test: [ "CMD", "nslookup", "dc-lab.lab.local" ]
+      interval: 1m
+      timeout: 10s
+      retries: 3
