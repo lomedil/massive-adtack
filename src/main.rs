@@ -65,6 +65,25 @@ pub enum UserCommands {
         #[arg(short, long)]
         ldap_filter: Option<String>,
     },
+
+    /// Remove users from the directory
+    Rm {
+        /// Filter to select users to remove (searches only in username field). Supports wildcards.
+        #[arg()]
+        filter: String,
+
+        /// Optional container DN to scope the search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Dry run mode (do not delete users, just list them)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompt for multiple deletions
+        #[arg(long)]
+        no_confirm: bool,
+    },
 }
 
 #[tokio::main]

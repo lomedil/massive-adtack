@@ -23,7 +23,134 @@ pub async fn execute(command: UserCommands) -> Result<()> {
             container,
             ldap_filter,
         } => list_users(filter, container, ldap_filter).await,
+        UserCommands::Rm {
+            filter,
+            container,
+            dry_run,
+            no_confirm,
+        } => rm_users(filter, container, dry_run, no_confirm).await,
     }
+}
+
+async fn rm_users(
+    filter: String,
+    container: Option<DistinguishedName>,
+    dry_run: bool,
+    no_confirm: bool,
+) -> Result<()> {
+    let cfg = Config::load()?;
+    let mut ldap = connect_ldap(&cfg).await?;
+
+    let target_base = if let Some(c) = &container {
+        DistinguishedName::builder()
+            .add_raw(c.as_str())
+            .append_base(&cfg.base_dn)
+            .build()?
+    } else {
+        cfg.base_dn.clone()
+    };
+
+    // Filter construction
+    // If filter contains '*', use as is. Otherwise correct equality match.
+    let ldap_filter = format!(
+        "(&(objectClass=user)({}={}))",
+        cfg.mappings.username, filter
+    );
+
+    println!("Searching for users to remove...");
+    println!("Base: {}", target_base);
+    println!("Filter: {}\n", ldap_filter);
+
+    let (res, _) = ldap
+        .search(
+            target_base.as_str(),
+            ldap3::Scope::Subtree,
+            &ldap_filter,
+            vec!["dn"],
+        )
+        .await?
+        .success()?;
+
+    let count = res.len();
+    if count == 0 {
+        println!("No users found matching the filter.");
+        return Ok(());
+    }
+
+    println!("Found {} users matching the filter.", count);
+
+    // List preview (first 20)
+    for (i, entry) in res.iter().take(20).enumerate() {
+        let search_entry = SearchEntry::construct(entry.clone());
+        println!("  {}: {}", i + 1, search_entry.dn);
+    }
+    if count > 20 {
+        println!("  ...and {} more.", count - 20);
+    }
+
+    if dry_run {
+        println!("\nDry run enabled. No changes made.");
+        return Ok(());
+    }
+
+    // Confirmation
+    if !no_confirm {
+        print!(
+            "\nAre you sure you want to delete these {} users? [y/N] ",
+            count
+        );
+        std::io::Write::flush(&mut std::io::stdout())?;
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Operation cancelled.");
+            return Ok(());
+        }
+    }
+
+    println!("\nDeleting users...");
+    let pb = ProgressBar::new(count as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.red/white}] {pos}/{len} ({eta}) {msg}")?
+            .progress_chars("#>-"),
+    );
+
+    let mut success = 0;
+    let mut failures = 0;
+
+    for entry in res {
+        let search_entry = SearchEntry::construct(entry);
+        let dn = search_entry.dn;
+
+        pb.set_message(format!("Deleting {}", dn));
+
+        match ldap.delete(&dn).await {
+            Ok(res) => {
+                if res.clone().success().is_ok() {
+                    success += 1;
+                } else {
+                    failures += 1;
+                    pb.println(format!("Failed to delete {}: {:?}", dn, res));
+                }
+            }
+            Err(e) => {
+                failures += 1;
+                pb.println(format!("Error deleting {}: {}", dn, e));
+            }
+        }
+        pb.inc(1);
+    }
+
+    pb.finish_with_message("Done");
+
+    println!("\nDeleted {}/{} users.", success, count);
+    if failures > 0 {
+        println!("Failed to delete {} users.", failures);
+    }
+
+    Ok(())
 }
 
 async fn add_users(
