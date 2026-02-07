@@ -42,7 +42,7 @@ pub enum UserCommands {
         #[arg(short = 'n', long, default_value_t = 10)]
         count: u32,
 
-        /// Username format template (e.g. "{first}.{last}{n}")
+        /// Username format template (e.g. "{first_name}.{last_name}{counter}")
         #[arg(short, long)]
         format: Option<String>,
 

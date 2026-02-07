@@ -1,44 +1,121 @@
-# 🎸 Project: Massive AD-tack (`mad`)
+# 🎸 Massive AD-tack (`mad`)
 
-**Massive AD-tack** is a high-performance LDAP stress-testing and provisioning tool written in **Rust**. It is designed to "attack" (saturate with data) Active Directory environments to validate synchronization services, performance bottlenecks, and schema limits.
+**Massive AD-tack** is a high-performance LDAP stress-testing and provisioning tool written in **Rust**. It is designed to "attack" (fill with data) Active Directory environments to validate synchronization services, performance bottlenecks, and schema limits.
 
-## 🚀 The Binary: `mad`
-The command-line interface is optimized for speed. `mad` allows for the rapid creation of complex directory structures, thousands of users, and nested groups.
+> [!NOTE]
+> **🧪 Experiment & Philosophy**
+>
+> This project is an experiment in **AI-Assisted Development** using **Antigravity**.
+>
+> It serves a dual purpose:
+> 1.  To build a robust tool for real-world scenarios.
+> 2.  To explore how AI agents can boost productivity **without replacing the joy of programming**. It is about allowing the human to focus on the *craft* while the agent handles the *heavy lifting*.
 
----
+## 🚀 Features
 
-## 🛠️ Technical Context
+-   **Blazingly Fast**: Built with Rust, `tokio`, and `ldap3` for asynchronous performance.
+-   **Bulk User Creation**: Generate thousands of users with customizable naming patterns.
+-   **Smart Cleanup**: Search-based deletion with safety checks (dry-run, confirmation prompts).
+-   **Connectivity Checks**: Verify server capabilities and supported controls (e.g., Paged Results).
+
+## 📦 Installation
+
+To build and install from source, ensure you have a standard Rust toolchain installed.
+
+```bash
+git clone https://github.com/lomedil/massive-adtack.git
+cd massive-adtack
+cargo install --path .
+```
+
+## ⚙️ Configuration
+
+`mad` looks for a configuration file in the following order:
+1.  Environment variable `MAD_CONFIG`
+2.  `.agents/config.toml` (for agent use)
+3.  `config.toml` (in the current directory)
+
+### Example `config.toml`
+
+```toml
+url = "ldap://localhost:10389"
+base_dn = "DC=lab,DC=local"
+user = "CN=Administrator,CN=Users,DC=lab,DC=local"
+password = "StrongPassword123!"
+starttls = false
+tls_ca_cert = "never" # or path to CA cert
+username_format = "{first_name}.{last_name}{counter}"
+
+[mappings]
+username = "sAMAccountName"
+first_name = "givenName"
+last_name = "sn"
+email = "mail"
+phone = "telephoneNumber"
+```
+
+### 1. Check Connectivity
+Verify that `mad` can reach your target Active Directory environment.
+
+```bash
+mad check
+# Output in JSON format
+mad check --json
+```
+
+### 2. Bulk Create Users
+Create 1,000 users with a specific naming format.
+
+```bash
+mad users add --count 1000 --format "test_user_{counter}"
+```
+
+### 3. List Users
+Search for users using simple wildcards or raw LDAP filters.
+
+```bash
+# Verify creation
+mad users list --filter "test_user_*"
+
+# Advanced LDAP filter
+mad users list --ldap-filter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=test_*))"
+```
+
+### 4. Housekeeping (Delete Users)
+Clean up users matching a pattern. **Always dry-run first!**
+
+```bash
+# 1. Dry run to see what would be deleted
+mad users rm "test_user_*" --dry-run
+
+# 2. Perform deletion (prompts for confirmation)
+mad users rm "test_user_*"
+
+# 3. Force deletion (no confirmation)
+mad users rm "test_user_*" --no-confirm
+```
+
+## ⚙️ Technical Context
 
 ### Target Environment
-* **Primary Target:** Samba 4 acting as an **Active Directory Domain Controller (AD DC)**.
-* **Infrastructure:** Deployed via Docker on **WSL2** (using the Linux native file system for `xattr` support).
-* **Connection:** LDAP v3 via `localhost:10389` (default remapped port to avoid Windows port 445/389 conflicts).
+*   **Primary Target:** Samba 4 acting as an **Active Directory Domain Controller (AD DC)**.
+*   **Protocol:** LDAP v3 (default port `10389` to avoid conflicts on dev machines).
 
-### LDAP & AD Requirements
-To successfully "attack" an AD/Samba instance, the tool implements:
-1.  **AD-Specific Schema:** Generation of `sAMAccountName`, `userPrincipalName`, and `unicodePwd` (requires LDAPS/TLS for password setting).
-2.  **Paging Support:** Mandatory use of the **Simple Paged Results Control** (OID `1.2.840.113556.1.4.319`) for reading back large datasets.
-3.  **Root DSE Discovery:** Auto-interrogation of the server (DN "") to verify capabilities (`supportedControl`, `supportedLDAPVersion`) before starting execution.
+### Key Constraints
+To successfully operate against AD/Samba, `mad` handles:
+1.  **AD Schemas:** `sAMAccountName`, `userPrincipalName`, `unicodePwd`.
+2.  **Paging:** Uses **Simple Paged Results** (OID `1.2.840.113556.1.4.319`) for large result sets.
+3.  **Root DSE:** Auto-discovery of server capabilities.
 
----
+## 🧪 Test Lab
 
-## 🏗️ Architecture Goals (for AI Agents)
+A Docker-based test environment (Samba AD DC) is available in the `testlab/` directory.
+Check out [testlab/how-to-deploy.md](testlab/how-to-deploy.md) for deployment instructions.
 
-When generating code for **Massive AD-tack**, follow these principles:
+## 🤖 For AI Agents
 
-* **Asynchronous I/O:** Use `tokio` and `ldap3` in its async flavor to handle multiple concurrent Binds and Add operations.
-* **Deterministic Data:** Use seeds for user generation so that "Attacks" can be reproducible across different environments.
-* **Performance:** Minimize allocations in the hot path of user creation. Rust's ownership model should be used to reuse buffers for LDAP attributes.
-* **Error Handling:** Distinguish between "Server Saturated" (Timeout) and "Schema Violation" (Constraint Violation).
+If you are an AI agent (Opencode, Antigravity, etc.) tasked with maintaining this codebase, please refer to [AGENTS.md](./AGENTS.md) for architectural guidelines and coding standards.
 
----
+## 📄 License
 
-## 📋 Quick Reference for Agents
-* **Default Base DN:** `DC=lab,DC=local`
-* **Default Admin:** `CN=Administrator,CN=Users,DC=lab,DC=local`
-* **Mandatory User Classes:** `top`, `person`, `organizationalPerson`, `user`.
-* **Naming Convention:** All generated objects should ideally follow a pattern (e.g., `mad-user-0001`) for easy cleanup.
-
----
-
-> **Note:** This tool is strictly for internal testing and performance benchmarking. It assumes full administrative access to the target LDAP/Samba server.
+This project is licensed under the [MIT License](LICENSE).
