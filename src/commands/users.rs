@@ -27,7 +27,10 @@ async fn add_users(
     container: Option<DistinguishedName>,
 ) -> Result<()> {
     let cfg = Config::load()?;
-    let domain = derive_domain(&cfg.base_dn);
+    let domain = cfg
+        .base_dn
+        .dns_name()
+        .context("Could not find a DC= part in base DN")?;
     let formatter = NamingFormatter::new(template_override.or(cfg.username_format.clone()));
 
     let mut ldap = connect_ldap(&cfg).await?;
@@ -62,7 +65,7 @@ async fn add_users(
         let (dn, attrs) = prepare_user_entry(&cfg, &formatter, &domain, &target_base, i);
         pb.set_message(format!("Adding {}", dn));
 
-        let res = ldap.add(&dn.to_string(), attrs).await?;
+        let res = ldap.add(dn.as_str(), attrs).await?;
         match res.success() {
             Ok(_) => success += 1,
             Err(e) => {
@@ -93,10 +96,8 @@ async fn add_users(
 async fn connect_ldap(cfg: &Config) -> Result<Ldap> {
     println!("Connecting to {}...", cfg.url);
     let mut settings = LdapConnSettings::new();
-    if let Some(ca_cert) = &cfg.tls_ca_cert {
-        if ca_cert == "never" {
-            settings = settings.set_no_tls_verify(true);
-        }
+    if cfg.tls_ca_cert.as_deref() == Some("never") {
+        settings = settings.set_no_tls_verify(true);
     }
 
     let (conn, mut ldap) = LdapConnAsync::with_settings(settings, &cfg.url)
@@ -175,47 +176,31 @@ fn prepare_user_entry(
     );
     attrs.insert(
         cfg.mappings.username.clone(),
-        HashSet::from_iter(vec![username.clone()]),
+        HashSet::from_iter([username.clone()]),
     );
     attrs.insert(
         cfg.mappings.first_name.clone(),
-        HashSet::from_iter(vec![first_name.clone()]),
+        HashSet::from_iter([first_name.clone()]),
     );
     attrs.insert(
         cfg.mappings.last_name.clone(),
-        HashSet::from_iter(vec![last_name.clone()]),
+        HashSet::from_iter([last_name.clone()]),
     );
     attrs.insert(
         cfg.mappings.email.clone(),
-        HashSet::from_iter(vec![email.clone()]),
+        HashSet::from_iter([email.clone()]),
     );
-    attrs.insert(
-        cfg.mappings.phone.clone(),
-        HashSet::from_iter(vec![phone.clone()]),
-    );
+    attrs.insert(cfg.mappings.phone.clone(), HashSet::from_iter([phone]));
 
     // AD specific fields often required
-    attrs.insert(
-        "userPrincipalName".to_string(),
-        HashSet::from_iter(vec![email.clone()]),
-    );
+    attrs.insert("userPrincipalName".to_string(), HashSet::from_iter([email]));
     attrs.insert(
         "displayName".to_string(),
-        HashSet::from_iter(vec![format!("{} {}", first_name, last_name)]),
+        HashSet::from_iter([format!("{} {}", first_name, last_name)]),
     );
-    attrs.insert("cn".to_string(), HashSet::from_iter(vec![username.clone()]));
+    attrs.insert("cn".to_string(), HashSet::from_iter([username]));
 
     (dn, attrs.into_iter().collect())
-}
-
-fn derive_domain(base_dn: &DistinguishedName) -> String {
-    base_dn
-        .as_str()
-        .split(',')
-        .filter(|part| part.to_uppercase().starts_with("DC="))
-        .map(|part| &part[3..])
-        .collect::<Vec<_>>()
-        .join(".")
 }
 
 #[cfg(test)]
@@ -223,17 +208,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_derive_domain() {
+    fn test_dns_name_extraction() {
         assert_eq!(
-            derive_domain(&DistinguishedName::try_from("DC=lab,DC=internal").unwrap()),
+            DistinguishedName::try_from("DC=lab,DC=internal")
+                .unwrap()
+                .dns_name()
+                .unwrap(),
             "lab.internal"
         );
         assert_eq!(
-            derive_domain(&DistinguishedName::try_from("OU=Users,DC=example,DC=com").unwrap()),
+            DistinguishedName::try_from("OU=Users,DC=example,DC=com")
+                .unwrap()
+                .dns_name()
+                .unwrap(),
             "example.com"
         );
         assert_eq!(
-            derive_domain(&DistinguishedName::try_from("CN=Users,DC=corp").unwrap()),
+            DistinguishedName::try_from("CN=Users,DC=corp")
+                .unwrap()
+                .dns_name()
+                .unwrap(),
             "corp"
         );
     }

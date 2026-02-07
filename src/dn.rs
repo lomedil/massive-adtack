@@ -15,6 +15,22 @@ impl DistinguishedName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn domain(&self) -> Option<&str> {
+        self.0.find("DC=").map(|index| &self.0[index..])
+    }
+
+    pub fn dns_name(&self) -> Option<String> {
+        self.domain().map(|d| {
+            d.split(',')
+                .filter_map(|part| {
+                    let (key, val) = part.split_once('=')?;
+                    if key == "DC" { Some(val) } else { None }
+                })
+                .collect::<Vec<_>>()
+                .join(".")
+        })
+    }
 }
 
 impl Deref for DistinguishedName {
@@ -56,7 +72,20 @@ impl TryFrom<&str> for DistinguishedName {
         if !s.contains('=') {
             return Err(anyhow!("Invalid DN format: '{}' (must contain '=')", s));
         }
-        Ok(DistinguishedName(s.to_string()))
+
+        // Normalize the tags to uppercase
+        let normalized = s
+            .split(',')
+            .map(|part| {
+                let mut parts = part.splitn(2, '=');
+                let attr = parts.next().unwrap().trim().to_uppercase();
+                let value = parts.next().unwrap().trim();
+                format!("{}={}", attr, value)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+
+        Ok(DistinguishedName(normalized))
     }
 }
 
@@ -115,7 +144,7 @@ mod tests {
     #[test]
     fn test_valid_dn() {
         let dn = DistinguishedName::try_from("cn=user,dc=example,dc=com").unwrap();
-        assert_eq!(dn.as_str(), "cn=user,dc=example,dc=com");
+        assert_eq!(dn.as_str(), "CN=user,DC=example,DC=com");
     }
 
     #[test]
@@ -132,7 +161,7 @@ mod tests {
             .append_base(&base)
             .build()
             .unwrap();
-        assert_eq!(dn.as_str(), "cn=john,dc=example,dc=com");
+        assert_eq!(dn.as_str(), "CN=john,DC=example,DC=com");
     }
 
     #[test]
@@ -142,6 +171,30 @@ mod tests {
             .add("dc", "internal")
             .build()
             .unwrap();
-        assert_eq!(dn.as_str(), "dc=lab,dc=internal");
+        assert_eq!(dn.as_str(), "DC=lab,DC=internal");
+    }
+
+    #[test]
+    fn test_domain() {
+        let dn = DistinguishedName::try_from("cn=user,dc=example,dc=com").unwrap();
+        assert_eq!(dn.domain(), Some("DC=example,DC=com"));
+    }
+
+    #[test]
+    fn test_domain_no_dc() {
+        let dn = DistinguishedName::try_from("cn=user").unwrap();
+        assert_eq!(dn.domain(), None);
+    }
+
+    #[test]
+    fn test_dns_name() {
+        let dn = DistinguishedName::try_from("cn=user,dc=example,dc=com").unwrap();
+        assert_eq!(dn.dns_name(), Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn test_dns_name_no_dc() {
+        let dn = DistinguishedName::try_from("cn=user").unwrap();
+        assert_eq!(dn.dns_name(), None);
     }
 }
