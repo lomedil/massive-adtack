@@ -41,6 +41,17 @@ enum Commands {
 
 #[derive(Subcommand)]
 pub enum GroupCommands {
+    /// Add a new group to the directory
+    Add {
+        /// Name of the group to create
+        #[arg()]
+        groupname: String,
+
+        /// Optional container DN where the group will be created (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+    },
+
     /// List groups from the directory
     List {
         /// Simple search filter (searches in cn and sAMAccountName)

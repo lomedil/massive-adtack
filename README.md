@@ -15,7 +15,7 @@
 
 -   **Blazingly Fast**: Built with Rust, `tokio`, and `ldap3` for asynchronous performance.
 -   **Bulk User Creation**: Generate thousands of users with customizable naming patterns.
--   **Group Information**: List groups with member counts and CN details.
+-   **Group Management**: Create and list groups with member counts and CN details.
 -   **Smart Cleanup**: Search-based deletion with safety checks (dry-run, confirmation prompts).
 -   **Connectivity Checks**: Verify server capabilities and supported controls (e.g., Paged Results).
 
@@ -101,6 +101,17 @@ Search for groups and see member counts.
 
 ```bash
 mad groups list --filter "Sync"
+```
+
+### 6. Create Groups
+Create a single group in the default base DN or a specific container.
+
+```bash
+# Default container
+mad groups add "MyNewGroup"
+
+# Specific container
+mad groups add "MyNewGroup" -C "OU=Spain"
 ```
 
 ## ⚙️ Technical Context

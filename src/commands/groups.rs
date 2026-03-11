@@ -4,8 +4,14 @@ use crate::dn::DistinguishedName;
 use anyhow::{Context, Result};
 use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, SearchEntry};
 
+use std::collections::{BTreeMap, HashSet};
+
 pub async fn execute(command: GroupCommands) -> Result<()> {
     match command {
+        GroupCommands::Add {
+            groupname,
+            container,
+        } => add_group(groupname, container).await,
         GroupCommands::List {
             filter,
             container,
@@ -85,6 +91,62 @@ async fn list_groups(
     }
 
     Ok(())
+}
+
+async fn add_group(groupname: String, container: Option<DistinguishedName>) -> Result<()> {
+    let cfg = Config::load()?;
+    let mut ldap = connect_ldap(&cfg).await?;
+
+    let target_base = if let Some(c) = &container {
+        DistinguishedName::builder()
+            .add_raw(c.as_str())
+            .append_base(&cfg.base_dn)
+            .build()?
+    } else {
+        cfg.base_dn.clone()
+    };
+
+    println!("Validating target base: {}", target_base);
+    if let Err(e) = crate::commands::users::validate_base_exists(&mut ldap, &target_base).await {
+        anyhow::bail!("Error validating target container '{}': {}", target_base, e);
+    }
+
+    println!("Creating group '{}' in: {}", groupname, target_base);
+
+    let dn = DistinguishedName::builder()
+        .add("cn", &groupname)
+        .append_base(&target_base)
+        .build()
+        .context("Failed to build group DN")?;
+
+    let mut attrs = BTreeMap::new();
+    attrs.insert(
+        "objectClass".to_string(),
+        HashSet::from_iter(vec!["top".to_string(), "group".to_string()]),
+    );
+    attrs.insert(
+        "sAMAccountName".to_string(),
+        HashSet::from_iter(vec![groupname.clone()]),
+    );
+    attrs.insert(
+        "cn".to_string(),
+        HashSet::from_iter(vec![groupname.clone()]),
+    );
+
+    let res = ldap.add(dn.as_str(), attrs.into_iter().collect()).await?;
+    match res.success() {
+        Ok(_) => {
+            println!("Successfully created group '{}'", groupname);
+            Ok(())
+        }
+        Err(e) => {
+            anyhow::bail!(
+                "Failed to create group '{}'. AD Server returned: {}",
+                groupname,
+                e
+            );
+        }
+    }
 }
 
 fn get_attr(entry: &SearchEntry, attr: &str) -> String {

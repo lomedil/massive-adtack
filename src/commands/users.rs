@@ -335,7 +335,10 @@ async fn connect_ldap(cfg: &Config) -> Result<Ldap> {
     Ok(ldap)
 }
 
-async fn validate_base_exists(ldap: &mut Ldap, base_dn: &DistinguishedName) -> Result<()> {
+pub(crate) async fn validate_base_exists(
+    ldap: &mut Ldap,
+    base_dn: &DistinguishedName,
+) -> Result<()> {
     use ldap3::Scope;
 
     let res = ldap
