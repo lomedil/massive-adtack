@@ -32,6 +32,29 @@ enum Commands {
         #[command(subcommand)]
         command: UserCommands,
     },
+    /// Manage groups
+    Groups {
+        #[command(subcommand)]
+        command: GroupCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GroupCommands {
+    /// List groups from the directory
+    List {
+        /// Simple search filter (searches in cn and sAMAccountName)
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Optional container DN to scope the search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Raw LDAP filter (e.g. "(objectClass=group)")
+        #[arg(short, long)]
+        ldap_filter: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -99,6 +122,9 @@ async fn main() -> Result<()> {
         }
         Commands::Users { command } => {
             commands::users::execute(command).await?;
+        }
+        Commands::Groups { command } => {
+            commands::groups::execute(command).await?;
         }
     }
 

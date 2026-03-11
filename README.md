@@ -15,6 +15,7 @@
 
 -   **Blazingly Fast**: Built with Rust, `tokio`, and `ldap3` for asynchronous performance.
 -   **Bulk User Creation**: Generate thousands of users with customizable naming patterns.
+-   **Group Information**: List groups with member counts and CN details.
 -   **Smart Cleanup**: Search-based deletion with safety checks (dry-run, confirmation prompts).
 -   **Connectivity Checks**: Verify server capabilities and supported controls (e.g., Paged Results).
 
@@ -93,6 +94,13 @@ mad users rm "test_user_*"
 
 # 3. Force deletion (no confirmation)
 mad users rm "test_user_*" --no-confirm
+```
+
+### 5. List Groups
+Search for groups and see member counts.
+
+```bash
+mad groups list --filter "Sync"
 ```
 
 ## ⚙️ Technical Context
