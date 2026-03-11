@@ -66,6 +66,25 @@ pub enum GroupCommands {
         #[arg(short, long)]
         ldap_filter: Option<String>,
     },
+
+    /// Remove a single group from the directory
+    Rm {
+        /// Group identifier: full DN, RDN literal like CN=My Group, or sAMAccountName
+        #[arg()]
+        name: String,
+
+        /// Optional container DN to scope the search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Dry run mode (do not delete the group, just show the match)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompt
+        #[arg(long)]
+        no_confirm: bool,
+    },
 }
 
 #[derive(Subcommand)]

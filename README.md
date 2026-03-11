@@ -114,6 +114,25 @@ mad groups add "MyNewGroup"
 mad groups add "MyNewGroup" -C "OU=Spain"
 ```
 
+### 7. Remove a Group
+Delete exactly one group by full DN, by literal `CN=...` RDN, or by exact `sAMAccountName`. Always dry-run first.
+
+```bash
+# Dry run by sAMAccountName
+mad groups rm "MyNewGroup" --dry-run -C "OU=Spain"
+
+# Dry run by RDN
+mad groups rm "CN=My New Group" --dry-run -C "OU=Spain"
+
+# Delete by full DN
+mad groups rm "CN=My New Group,OU=Spain,DC=LAB,DC=INTERNAL"
+
+# Skip confirmation
+mad groups rm "MyNewGroup" --no-confirm -C "OU=Spain"
+```
+
+If the identifier matches zero or multiple groups, `mad` stops with an error and does not delete anything.
+
 ## ⚙️ Technical Context
 
 ### Target Environment
