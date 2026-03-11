@@ -15,6 +15,7 @@
 
 -   **Blazingly Fast**: Built with Rust, `tokio`, and `ldap3` for asynchronous performance.
 -   **Bulk User Creation**: Generate thousands of users with customizable naming patterns.
+-   **Group Management**: Create and list groups with member counts and CN details.
 -   **Smart Cleanup**: Search-based deletion with safety checks (dry-run, confirmation prompts).
 -   **Connectivity Checks**: Verify server capabilities and supported controls (e.g., Paged Results).
 
@@ -93,6 +94,65 @@ mad users rm "test_user_*"
 
 # 3. Force deletion (no confirmation)
 mad users rm "test_user_*" --no-confirm
+```
+
+### 5. List Groups
+Search for groups and see member counts.
+
+```bash
+mad groups list --filter "Sync"
+```
+
+### 6. Create Groups
+Create a single group in the default base DN or a specific container.
+
+```bash
+# Default container
+mad groups add "MyNewGroup"
+
+# Specific container
+mad groups add "MyNewGroup" -C "OU=Acme"
+```
+
+### 7. Remove a Group
+Delete exactly one group by full DN, by literal `CN=...` RDN, or by exact `sAMAccountName`. Always dry-run first.
+
+```bash
+# Dry run by sAMAccountName
+mad groups rm "MyNewGroup" --dry-run -C "OU=Acme"
+
+# Dry run by RDN
+mad groups rm "CN=My New Group" --dry-run -C "OU=Acme"
+
+# Delete by full DN
+mad groups rm "CN=My New Group,OU=Acme,DC=LAB,DC=INTERNAL"
+
+# Skip confirmation
+mad groups rm "MyNewGroup" --no-confirm -C "OU=Acme"
+```
+
+If the identifier matches zero or multiple groups, `mad` stops with an error and does not delete anything.
+
+### 8. Bulk Add Users to a Group
+Add users to a group using either a simple filter or a raw LDAP filter. The group is resolved by full DN, `CN=...`, or `sAMAccountName`.
+
+```bash
+# Preview users that would be added
+mad groups join "MyNewGroup" --filter "test_user_*" -C "OU=Acme" --dry-run
+
+# Perform the operation
+mad groups join "MyNewGroup" --ldap-filter "(&(objectClass=user)(sAMAccountName=test_user_*))" -C "OU=Acme"
+```
+
+### 9. Bulk Remove Users from a Group
+Remove users from a group with the same user-selection options.
+
+```bash
+# Preview users that would be removed
+mad groups leave "MyNewGroup" --filter "test_user_*" -C "OU=Acme" --dry-run
+
+# Perform the operation
+mad groups leave "MyNewGroup" --filter "test_user_*" -C "OU=Acme"
 ```
 
 ## ⚙️ Technical Context

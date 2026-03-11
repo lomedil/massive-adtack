@@ -10,6 +10,7 @@ The project follows a modular Rust application structure:
 - **`src/commands/`**: Contains the logic for each subcommand.
   - **`mod.rs`**: Exports the command modules.
   - **`users.rs`**: Handles user creation (`add`), listing (`list`), and deletion (`rm`). This is the most complex module.
+  - **`groups.rs`**: Handles group-related commands (`add` and `list`).
   - **`check.rs`**: Implements the `check` command for server connectivity and feature discovery.
   - **`config.rs`**: Simple command to dump current configuration.
 - **`src/oids.rs`**: Central registry for OIDs used in the project (e.g., `1.2.840.113556.1.4.319` for Paged Results). Data is loaded from `src/oids.txt`.
