@@ -85,6 +85,52 @@ pub enum GroupCommands {
         #[arg(long)]
         no_confirm: bool,
     },
+
+    /// Add users to a group in bulk
+    Join {
+        /// Group identifier: full DN, RDN literal like CN=My Group, or sAMAccountName
+        #[arg()]
+        name: String,
+
+        /// Simple user search filter (searches in cn, sAMAccountName and mail)
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Raw LDAP filter to select users (e.g. "(&(objectClass=user)(sAMAccountName=test_*))")
+        #[arg(short, long)]
+        ldap_filter: Option<String>,
+
+        /// Optional container DN to scope both group resolution and user search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Dry run mode (do not modify the group, just show what would change)
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Remove users from a group in bulk
+    Leave {
+        /// Group identifier: full DN, RDN literal like CN=My Group, or sAMAccountName
+        #[arg()]
+        name: String,
+
+        /// Simple user search filter (searches in cn, sAMAccountName and mail)
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Raw LDAP filter to select users (e.g. "(&(objectClass=user)(sAMAccountName=test_*))")
+        #[arg(short, long)]
+        ldap_filter: Option<String>,
+
+        /// Optional container DN to scope both group resolution and user search (relative to base DN)
+        #[arg(short = 'C', long)]
+        container: Option<DistinguishedName>,
+
+        /// Dry run mode (do not modify the group, just show what would change)
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]

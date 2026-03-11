@@ -2,7 +2,7 @@ use crate::GroupCommands;
 use crate::config::Config;
 use crate::dn::DistinguishedName;
 use anyhow::{Context, Result, bail};
-use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, Mod, Scope, SearchEntry};
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -23,7 +23,26 @@ pub async fn execute(command: GroupCommands) -> Result<()> {
             dry_run,
             no_confirm,
         } => rm_group(name, container, dry_run, no_confirm).await,
+        GroupCommands::Join {
+            name,
+            filter,
+            ldap_filter,
+            container,
+            dry_run,
+        } => join_group(name, filter, ldap_filter, container, dry_run).await,
+        GroupCommands::Leave {
+            name,
+            filter,
+            ldap_filter,
+            container,
+            dry_run,
+        } => leave_group(name, filter, ldap_filter, container, dry_run).await,
     }
+}
+
+enum MembershipOperation {
+    Join,
+    Leave,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +215,199 @@ async fn rm_group(
     Ok(())
 }
 
+async fn join_group(
+    name: String,
+    filter: Option<String>,
+    ldap_filter: Option<String>,
+    container: Option<DistinguishedName>,
+    dry_run: bool,
+) -> Result<()> {
+    modify_group_members(
+        name,
+        filter,
+        ldap_filter,
+        container,
+        dry_run,
+        MembershipOperation::Join,
+    )
+    .await
+}
+
+async fn leave_group(
+    name: String,
+    filter: Option<String>,
+    ldap_filter: Option<String>,
+    container: Option<DistinguishedName>,
+    dry_run: bool,
+) -> Result<()> {
+    modify_group_members(
+        name,
+        filter,
+        ldap_filter,
+        container,
+        dry_run,
+        MembershipOperation::Leave,
+    )
+    .await
+}
+
+async fn modify_group_members(
+    name: String,
+    filter: Option<String>,
+    ldap_filter: Option<String>,
+    container: Option<DistinguishedName>,
+    dry_run: bool,
+    operation: MembershipOperation,
+) -> Result<()> {
+    if filter.is_none() && ldap_filter.is_none() {
+        bail!("You must provide either --filter or --ldap-filter to select users.");
+    }
+
+    let cfg = Config::load()?;
+    let mut ldap = connect_ldap(&cfg).await?;
+
+    let target_base = if let Some(c) = &container {
+        DistinguishedName::builder()
+            .add_raw(c.as_str())
+            .append_base(&cfg.base_dn)
+            .build()?
+    } else {
+        cfg.base_dn.clone()
+    };
+
+    if container.is_some() {
+        crate::commands::users::validate_base_exists(&mut ldap, &target_base)
+            .await
+            .with_context(|| format!("The container '{}' could not be validated", target_base))?;
+    }
+
+    let mut group_entry = resolve_single_group(&mut ldap, &target_base, &name).await?;
+    let user_filter = build_user_selection_filter(filter, ldap_filter)?;
+
+    println!("Searching users in base: {}", target_base);
+    println!("User filter: {}\n", user_filter);
+
+    let (user_res, _) = ldap
+        .search(
+            target_base.as_str(),
+            Scope::Subtree,
+            &user_filter,
+            vec!["sAMAccountName", "cn"],
+        )
+        .await?
+        .success()?;
+
+    if user_res.is_empty() {
+        println!("No users found for the provided filter.");
+        return Ok(());
+    }
+
+    let users = user_res
+        .into_iter()
+        .map(SearchEntry::construct)
+        .collect::<Vec<_>>();
+    let candidate_dns = users
+        .iter()
+        .map(|entry| entry.dn.clone())
+        .collect::<HashSet<_>>();
+
+    let current_members = group_entry
+        .attrs
+        .remove("member")
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    let to_change = match operation {
+        MembershipOperation::Join => candidate_dns
+            .iter()
+            .filter(|dn| !current_members.contains(*dn))
+            .cloned()
+            .collect::<Vec<_>>(),
+        MembershipOperation::Leave => candidate_dns
+            .iter()
+            .filter(|dn| current_members.contains(*dn))
+            .cloned()
+            .collect::<Vec<_>>(),
+    };
+
+    println!("Matched group: {}", group_entry.dn);
+    println!("Current members: {}", current_members.len());
+    println!("Selected users: {}", users.len());
+
+    let action_label = match operation {
+        MembershipOperation::Join => "to add",
+        MembershipOperation::Leave => "to remove",
+    };
+
+    println!("Users {}: {}", action_label, to_change.len());
+    for (index, user_dn) in to_change.iter().take(20).enumerate() {
+        println!("  {}: {}", index + 1, user_dn);
+    }
+    if to_change.len() > 20 {
+        println!("  ...and {} more.", to_change.len() - 20);
+    }
+
+    if to_change.is_empty() {
+        println!("No membership changes required.");
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("\nDry run enabled. No changes made.");
+        return Ok(());
+    }
+
+    let mut success = 0usize;
+    let mut failures = 0usize;
+
+    for user_dn in &to_change {
+        let op = match operation {
+            MembershipOperation::Join => Mod::Add("member", HashSet::from_iter([user_dn.as_str()])),
+            MembershipOperation::Leave => {
+                Mod::Delete("member", HashSet::from_iter([user_dn.as_str()]))
+            }
+        };
+
+        match ldap.modify(group_entry.dn.as_str(), vec![op]).await {
+            Ok(res) => {
+                if res.success().is_ok() {
+                    success += 1;
+                } else {
+                    failures += 1;
+                }
+            }
+            Err(_) => {
+                failures += 1;
+            }
+        }
+    }
+
+    let done_label = match operation {
+        MembershipOperation::Join => "Added",
+        MembershipOperation::Leave => "Removed",
+    };
+
+    println!(
+        "{} {}/{} users {} group '{}'.",
+        done_label,
+        success,
+        to_change.len(),
+        if matches!(operation, MembershipOperation::Join) {
+            "to"
+        } else {
+            "from"
+        },
+        group_entry.dn
+    );
+
+    if failures > 0 {
+        println!("Failed operations: {}", failures);
+    }
+
+    Ok(())
+}
+
 async fn list_groups(
     filter: Option<String>,
     container: Option<DistinguishedName>,
@@ -332,6 +544,99 @@ fn get_attr(entry: &SearchEntry, attr: &str) -> String {
         .and_then(|v| v.first())
         .cloned()
         .unwrap_or_default()
+}
+
+async fn resolve_single_group(
+    ldap: &mut Ldap,
+    target_base: &DistinguishedName,
+    name: &str,
+) -> Result<SearchEntry> {
+    let lookup = parse_group_lookup(name)?;
+
+    if let GroupLookup::FullDn(dn) = &lookup
+        && !dn_is_within_scope(dn, target_base)
+    {
+        bail!(
+            "The full DN '{}' is outside the allowed search scope '{}'.",
+            dn,
+            target_base
+        );
+    }
+
+    let ldap_filter = lookup.ldap_filter();
+
+    println!("Searching for target group...");
+    println!("Base: {}", target_base);
+    println!("Input: {}", name);
+    println!("Detected input type: {}", lookup.input_type());
+    println!("Lookup attribute: {}", lookup.lookup_attribute());
+    println!("Lookup value: {}", lookup.original_value());
+    println!("Filter: {}\n", ldap_filter);
+
+    let (res, _) = ldap
+        .search(
+            target_base.as_str(),
+            Scope::Subtree,
+            &ldap_filter,
+            vec!["cn", "sAMAccountName", "member"],
+        )
+        .await?
+        .success()?;
+
+    let matches = res
+        .into_iter()
+        .map(SearchEntry::construct)
+        .collect::<Vec<_>>();
+
+    if matches.is_empty() {
+        bail!(
+            "No group found using {} '{}' under '{}'.",
+            lookup.input_type(),
+            lookup.original_value(),
+            target_base
+        );
+    }
+
+    if matches.len() > 1 {
+        eprintln!(
+            "Ambiguous group identifier: {} '{}' matched {} groups:",
+            lookup.input_type(),
+            lookup.original_value(),
+            matches.len()
+        );
+        for entry in &matches {
+            let cn = get_attr(entry, "cn");
+            let sam = get_attr(entry, "sAMAccountName");
+            eprintln!("  - {} (cn='{}', sAMAccountName='{}')", entry.dn, cn, sam);
+        }
+        bail!("Refusing operation because the identifier is ambiguous.");
+    }
+
+    Ok(matches.into_iter().next().expect("group match exists"))
+}
+
+fn build_user_selection_filter(
+    filter: Option<String>,
+    ldap_filter: Option<String>,
+) -> Result<String> {
+    if let Some(raw) = ldap_filter {
+        return Ok(raw);
+    }
+
+    if let Some(f) = filter {
+        let pattern = if f.contains('*') {
+            f
+        } else {
+            format!("*{}*", f)
+        };
+
+        return Ok(format!(
+            "(&(objectClass=user)(|(cn={0})(sAMAccountName={0})(mail={0})))",
+            pattern
+        ));
+    }
+
+    bail!("You must provide either --filter or --ldap-filter to select users.")
 }
 
 fn parse_group_lookup(input: &str) -> Result<GroupLookup> {
@@ -471,5 +776,26 @@ mod tests {
         let child = DistinguishedName::try_from("CN=Grupo,OU=France,DC=LAB,DC=INTERNAL").unwrap();
         let scope = DistinguishedName::try_from("OU=Spain,DC=LAB,DC=INTERNAL").unwrap();
         assert!(!dn_is_within_scope(&child, &scope));
+    }
+
+    #[test]
+    fn build_user_filter_from_simple_filter() {
+        let ldap_filter = build_user_selection_filter(Some("qa".to_string()), None).unwrap();
+        assert_eq!(
+            ldap_filter,
+            "(&(objectClass=user)(|(cn=*qa*)(sAMAccountName=*qa*)(mail=*qa*)))"
+        );
+    }
+
+    #[test]
+    fn build_user_filter_from_raw_filter() {
+        let ldap_filter =
+            build_user_selection_filter(None, Some("(sAMAccountName=test*)".to_string())).unwrap();
+        assert_eq!(ldap_filter, "(sAMAccountName=test*)");
+    }
+
+    #[test]
+    fn reject_empty_user_filter_input() {
+        assert!(build_user_selection_filter(None, None).is_err());
     }
 }

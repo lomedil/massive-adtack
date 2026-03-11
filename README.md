@@ -111,7 +111,7 @@ Create a single group in the default base DN or a specific container.
 mad groups add "MyNewGroup"
 
 # Specific container
-mad groups add "MyNewGroup" -C "OU=Spain"
+mad groups add "MyNewGroup" -C "OU=Acme"
 ```
 
 ### 7. Remove a Group
@@ -119,19 +119,41 @@ Delete exactly one group by full DN, by literal `CN=...` RDN, or by exact `sAMAc
 
 ```bash
 # Dry run by sAMAccountName
-mad groups rm "MyNewGroup" --dry-run -C "OU=Spain"
+mad groups rm "MyNewGroup" --dry-run -C "OU=Acme"
 
 # Dry run by RDN
-mad groups rm "CN=My New Group" --dry-run -C "OU=Spain"
+mad groups rm "CN=My New Group" --dry-run -C "OU=Acme"
 
 # Delete by full DN
-mad groups rm "CN=My New Group,OU=Spain,DC=LAB,DC=INTERNAL"
+mad groups rm "CN=My New Group,OU=Acme,DC=LAB,DC=INTERNAL"
 
 # Skip confirmation
-mad groups rm "MyNewGroup" --no-confirm -C "OU=Spain"
+mad groups rm "MyNewGroup" --no-confirm -C "OU=Acme"
 ```
 
 If the identifier matches zero or multiple groups, `mad` stops with an error and does not delete anything.
+
+### 8. Bulk Add Users to a Group
+Add users to a group using either a simple filter or a raw LDAP filter. The group is resolved by full DN, `CN=...`, or `sAMAccountName`.
+
+```bash
+# Preview users that would be added
+mad groups join "MyNewGroup" --filter "test_user_*" -C "OU=Acme" --dry-run
+
+# Perform the operation
+mad groups join "MyNewGroup" --ldap-filter "(&(objectClass=user)(sAMAccountName=test_user_*))" -C "OU=Acme"
+```
+
+### 9. Bulk Remove Users from a Group
+Remove users from a group with the same user-selection options.
+
+```bash
+# Preview users that would be removed
+mad groups leave "MyNewGroup" --filter "test_user_*" -C "OU=Acme" --dry-run
+
+# Perform the operation
+mad groups leave "MyNewGroup" --filter "test_user_*" -C "OU=Acme"
+```
 
 ## ⚙️ Technical Context
 
